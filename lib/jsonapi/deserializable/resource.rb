@@ -50,6 +50,7 @@ module JSONAPI
         @id   = @data['id']
         @attributes    = @data['attributes'] || {}
         @relationships = @data['relationships'] || {}
+        @included      = initialize_included(@document['included'])
         deserialize!
         freeze
       end
@@ -62,6 +63,16 @@ module JSONAPI
       attr_reader :reverse_mapping
 
       private
+
+      def initialize_included(included)
+        return nil unless included.present?
+        included.map { |data| self.class.new({ 'data' => data }) }
+      end
+
+      def included_types
+        return [] unless @included.present?
+        @included.map { |doc| doc.instance_variable_get(:@type) }.uniq
+      end
 
       def configuration
         self.class.configuration
@@ -131,6 +142,9 @@ module JSONAPI
       def deserialize_has_one_rel(key, val)
         id   = val['data'] && val['data']['id']
         type = val['data'] && val['data']['type']
+        if included_types.include?(type)
+          return deserialize_has_one_included(key, val)
+        end
         if self.class.has_one_rel_blocks.key?(key)
           self.class.has_one_rel_blocks[key].call(val, id, type)
         else
@@ -140,14 +154,40 @@ module JSONAPI
       # rubocop: enable Metrics/AbcSize
 
       # rubocop: disable Metrics/AbcSize
+      def deserialize_has_one_included(key, val)
+        id   = val['data'] && val['data']['id']
+        type = val['data'] && val['data']['type']
+        found_val = @included.find do |i|
+          i.instance_variable_get(:@type) == type &&
+          i.instance_variable_get(:@id) == id
+        end.to_h
+
+        configuration.default_attribute.call(key, found_val)
+      end
+      # rubocop: enable Metrics/AbcSize
+
+      # rubocop: disable Metrics/AbcSize
       def deserialize_has_many_rel(key, val)
         ids   = val['data'].map { |ri| ri['id'] }
         types = val['data'].map { |ri| ri['type'] }
+        if included_types.include?(types.first)
+          return deserialize_has_many_included(key, types.first)
+        end
         if self.class.has_many_rel_blocks.key?(key)
           self.class.has_many_rel_blocks[key].call(val, ids, types)
         else
           configuration.default_has_many.call(key, val, ids, types)
         end
+      end
+      # rubocop: enable Metrics/AbcSize
+
+      # rubocop: disable Metrics/AbcSize
+      def deserialize_has_many_included(key, type)
+        val = @included
+          .select { |i| i.instance_variable_get(:@type) == type }
+          .map(&:to_h)
+
+        configuration.default_attribute.call(key, val)
       end
       # rubocop: enable Metrics/AbcSize
     end
