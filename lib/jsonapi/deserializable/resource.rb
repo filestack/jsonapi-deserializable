@@ -42,7 +42,7 @@ module JSONAPI
         @id   = @data['id']
         @attributes    = @data['attributes'] || {}
         @relationships = @data['relationships'] || {}
-        @included      = initialize_included(@document['included'])
+        @included      = initialize_included(@data['included'])
         deserialize!
 
         freeze
